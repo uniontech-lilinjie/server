@@ -18010,6 +18010,15 @@ static int innodb_srv_buf_dump_filename_validate(THD *thd, st_mysql_sys_var*,
     *static_cast<const char**>(save)= buf_name;
     return 0;
   }
+  else
+  {
+    wsrep_thd_LOCK(thd);
+    victim_trx->lock.was_chosen_as_wsrep_victim= false;
+    wsrep_thd_set_wsrep_aborter(NULL, thd);
+    wsrep_thd_UNLOCK(thd);
+
+    WSREP_DEBUG("wsrep_thd_bf_abort has failed, victim will survive");
+  }
 
   return 1;
 }
