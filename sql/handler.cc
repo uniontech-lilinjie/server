@@ -4145,6 +4145,35 @@ int handler::check_collation_compatibility()
 }
 
 
+int handler::check_long_hash_compatibility() const
+{
+  if (!table->s->old_long_hash_function())
+    return 0;
+  KEY *key= table->key_info;
+  KEY *key_end= key + table->s->keys;
+  for ( ; key < key_end; key++)
+  {
+    if (key->algorithm == HA_KEY_ALG_LONG_HASH)
+    {
+      /*
+        The old (pre-MDEV-27653)  hash function was wrong.
+        So the long hash unique constraint can have some
+        duplicate records. REPAIR TABLE can't fix this,
+        it will fail on a duplicate key error.
+        Only "ALTER IGNORE TABLE .. FORCE" can fix this.
+        So we need to return HA_ADMIN_NEEDS_ALTER here,
+        (not HA_ADMIN_NEEDS_UPGRADE which is used elsewhere),
+        to properly send the error message text corresponding
+        to ER_TABLE_NEEDS_REBUILD (rather than to ER_TABLE_NEEDS_UPGRADE)
+        to the user.
+      */
+      return HA_ADMIN_NEEDS_ALTER;
+    }
+  }
+  return 0;
+}
+
+
 int handler::ha_check_for_upgrade(HA_CHECK_OPT *check_opt)
 {
   int error;
@@ -4152,7 +4181,7 @@ int handler::ha_check_for_upgrade(HA_CHECK_OPT *check_opt)
   KEY_PART_INFO *keypart, *keypartend;
 
   if (table->s->incompatible_version)
-    return HA_ADMIN_NEEDS_ALTER;
+    return HA_ADMIN_NEEDS_UPGRADE;
 
   if (!table->s->mysql_version)
   {
@@ -4178,9 +4207,12 @@ int handler::ha_check_for_upgrade(HA_CHECK_OPT *check_opt)
     }
   }
   if (table->s->frm_version < FRM_VER_TRUE_VARCHAR)
-    return HA_ADMIN_NEEDS_ALTER;
+    return HA_ADMIN_NEEDS_UPGRADE;
 
   if (unlikely((error= check_collation_compatibility())))
+    return error;
+
+  if (unlikely((error= check_long_hash_compatibility())))
     return error;
     
   return check_for_upgrade(check_opt);
@@ -4198,11 +4230,11 @@ int handler::check_old_types()
     {
       if ((*field)->type() == MYSQL_TYPE_NEWDECIMAL)
       {
-        return HA_ADMIN_NEEDS_ALTER;
+        return HA_ADMIN_NEEDS_UPGRADE;
       }
       if ((*field)->type() == MYSQL_TYPE_VAR_STRING)
       {
-        return HA_ADMIN_NEEDS_ALTER;
+        return HA_ADMIN_NEEDS_UPGRADE;
       }
     }
   }
