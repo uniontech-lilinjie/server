@@ -15451,7 +15451,7 @@ get_foreign_key_info(
 	memcpy(tmp_buff, foreign->referenced_table_name, len);
 	tmp_buff[len] = 0;
 
-	len = filename_to_tablename(tmp_buff, name_buff, sizeof(name_buff));
+	len = filename_to_tablename(tmp_buff, name_buff, sizeof(name_buff), 1);
 	f_key_info.referenced_db = thd_make_lex_string(
 		thd, 0, name_buff, len, 1);
 
@@ -15467,7 +15467,7 @@ get_foreign_key_info(
 	memcpy(tmp_buff, foreign->foreign_table_name, len);
 	tmp_buff[len] = 0;
 
-	len = filename_to_tablename(tmp_buff, name_buff, sizeof(name_buff));
+	len = filename_to_tablename(tmp_buff, name_buff, sizeof(name_buff), 1);
 	f_key_info.foreign_db = thd_make_lex_string(
 		thd, 0, name_buff, len, 1);
 
