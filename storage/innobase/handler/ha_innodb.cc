@@ -20012,51 +20012,20 @@ ha_innobase::multi_range_read_explain_info(
 @return table handle
 @retval NULL if the table is dropped, unaccessible or corrupted
 for purge thread */
-TABLE* innodb_find_table_for_vc(THD* thd, dict_table_t* table)
+TABLE *innodb_find_table_for_vc(THD *thd, const dict_table_t *table)
 {
-	TABLE *mysql_table;
-	const bool  bg_thread = THDVAR(thd, background_thread);
+  ut_ad(THDVAR(thd, background_thread));
 
-	ut_ad(bg_thread);
+  if (TABLE *mysql_table = get_purge_table(thd))
+    return mysql_table;
 
-	if (bg_thread && (mysql_table = get_purge_table(thd))) {
-		return mysql_table;
-	}
+  char db_buf[NAME_LEN + 1], tbl_buf[NAME_LEN + 1];
+  ulint db_buf_len, tbl_buf_len;
 
-	char	db_buf[NAME_LEN + 1];
-	char	tbl_buf[NAME_LEN + 1];
-	ulint	db_buf_len, tbl_buf_len;
+  if (!table->parse_name(db_buf, tbl_buf, &db_buf_len, &tbl_buf_len))
+    return NULL;
 
-	if (!table->parse_name(db_buf, tbl_buf, &db_buf_len, &tbl_buf_len)) {
-		return NULL;
-	}
-
-	return open_purge_table(thd, db_buf, db_buf_len,
-				tbl_buf, tbl_buf_len);
-}
-
-/** Only used by the purge thread
-@param[in,out]	table       table whose virtual column template to be built */
-TABLE* innobase_init_vc_templ(dict_table_t* table)
-{
-	DBUG_ENTER("innobase_init_vc_templ");
-
-	ut_ad(table->vc_templ == NULL);
-
-	TABLE	*mysql_table= innodb_find_table_for_vc(current_thd, table);
-
-	ut_ad(mysql_table);
-	if (!mysql_table) {
-		DBUG_RETURN(NULL);
-	}
-
-	dict_vcol_templ_t* vc_templ = UT_NEW_NOKEY(dict_vcol_templ_t());
-
-	dict_sys.lock(SRW_LOCK_CALL);
-	table->vc_templ = vc_templ;
-	innobase_build_v_templ(mysql_table, table, vc_templ, nullptr, true);
-	dict_sys.unlock();
-	DBUG_RETURN(mysql_table);
+  return open_purge_table(thd, db_buf, db_buf_len, tbl_buf, tbl_buf_len);
 }
 
 /** Change dbname and table name in table->vc_templ.

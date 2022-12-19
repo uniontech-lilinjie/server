@@ -939,4 +939,3 @@ which is in the prepared state
 @return 0 or error number */
 int innobase_rollback_by_xid(handlerton* hton, XID* xid);
 
-TABLE* innodb_find_table_for_vc(THD* thd, dict_table_t* table);
