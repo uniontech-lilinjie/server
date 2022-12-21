@@ -1474,7 +1474,20 @@ dberr_t lock_fk_table(dict_table_t *const*table, const char *name,
     if (new_table)
       new_table->acquire();
     else
+    {
       new_table= dict_table_load({name, strlen(name)}, DICT_ERR_IGNORE_NONE);
+
+      if (UNIV_UNLIKELY(new_table && !*table))
+      {
+        // Ill-formed foreign key, will be handled outside.
+        // Table was acquired in dict_table_load, we should release it back.
+        // Note: we could have just loaded a fresh new instance. If so, it
+        // should be released gracefully, i.e. stats should be deinited.
+        dict_table_close(new_table, true);
+        dict_sys.unlock();
+        return DB_TABLE_NOT_FOUND;
+      }
+    }
     dict_sys.unlock();
 
     if (!new_table)
