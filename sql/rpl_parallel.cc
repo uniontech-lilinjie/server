@@ -2374,6 +2374,10 @@ rpl_parallel::workers_idle()
   struct rpl_parallel_entry *e;
   uint32 i, max_i;
 
+  /*
+    Would it make sense to optimize this?
+  */
+
   max_i= domain_hash.records;
   for (i= 0; i < max_i; ++i)
   {

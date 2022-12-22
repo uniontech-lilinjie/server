@@ -4123,12 +4123,19 @@ static int exec_relay_log_event(THD* thd, Relay_log_info* rli,
 
       In parallel replication, we might queue a large number of events, and
       the user might be surprised to see a claim that the slave is up to date
-      long before those queued events are actually executed.
+      long before those queued events are actually executed. If this is the
+      first event after idling, however, we want to update LMT immediately so
+      SBM is not calculated using the commit time of the last transaction.
      */
-    if (!rli->mi->using_parallel() &&
-        !(ev->is_artificial_event() || ev->is_relay_log_event() || (ev->when == 0)))
+    if ((!rli->mi->using_parallel() ||
+         (rli->last_master_timestamp_needs_update &&
+          ev->when > rli->last_master_timestamp)) &&
+        !(ev->is_artificial_event() || ev->is_relay_log_event() ||
+          (ev->when == 0)))
     {
-      rli->last_master_timestamp= ev->when + (time_t) ev->exec_time;
+      rli->last_master_timestamp_needs_update= false;
+      rli->last_master_timestamp=
+          ev->when + (rli->mi->using_parallel() ? 0 : (time_t) ev->exec_time);
       DBUG_ASSERT(rli->last_master_timestamp >= 0);
     }
 
@@ -7709,6 +7716,16 @@ static Log_event* next_event(rpl_group_info *rgi, ulonglong *event_size)
         mysql_mutex_unlock(&rli->log_space_lock);
         // Note that wait_for_update_relay_log unlocks lock_log !
         rli->relay_log.wait_for_update_relay_log(rli->sql_driver_thd);
+
+        /*
+          If we are a parallel slave, we will need to update
+          last_master_timestamp because we've been idle. Note we also need to
+          check that all workers are idle, because we may have long queues or
+          long running events, and we shouldn't update LMT if that is the case
+        */
+        rli->last_master_timestamp_needs_update=
+            rli->mi->using_parallel() && rli->parallel.workers_idle();
+
         // re-acquire data lock since we released it earlier
         mysql_mutex_lock(&rli->data_lock);
         rli->sql_thread_caught_up= false;
