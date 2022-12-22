@@ -1,0 +1,156 @@
+#
+#   This test ensures that after a delayed parallel slave has idled, i.e.
+# executed everything in its relay log, the next event group that the SQL
+# thread reads from the relay log will immediately be used in the
+# Seconds_Behind_Master. In particular, it ensures that the calculation for
+# Seconds_Behind_Master is based on the timestamp of the new transaction,
+# rather than the last committed transaction.
+#
+# References:
+#   MDEV-29639: Seconds_Behind_Master is incorrect for Delayed, Parallel
+#               Replicas
+#
+
+--source include/master-slave.inc
+
+--connection master
+create table t1 (a int);
+--source include/sync_slave_sql_with_master.inc
+
+--connection slave
+--source include/stop_slave.inc
+--let $master_delay= 3
+--eval change master to master_delay=$master_delay, master_use_gtid=Slave_Pos
+--let $old_slave_threads= `SELECT @@GLOBAL.slave_parallel_threads`
+set @@GLOBAL.slave_parallel_threads=2;
+--source include/start_slave.inc
+
+--connection slave
+LOCK TABLE t1 WRITE;
+
+--connection master
+insert into t1 values (1);
+
+--connection slave
+--echo # Waiting for first transaction to arrive on slave and start delaying..
+--let $wait_condition= SELECT count(*) FROM information_schema.processlist WHERE state LIKE 'Waiting until MASTER_DELAY seconds after master executed event';
+--source include/wait_condition.inc
+
+--echo # Validating SBM resets..
+--let $sbm_trx1_arrive= query_get_value(SHOW SLAVE STATUS, Seconds_Behind_Master, 1)
+if (`SELECT $sbm_trx1_arrive >= $master_delay`)
+{
+    --echo # SBM: $sbm_trx1_arrive
+    --die Seconds_Behind_Master should reset on the first event
+}
+--echo # ..done
+
+--echo # Waiting for first transaction to start executing on slave..
+--let $wait_condition= SELECT count(*) FROM information_schema.processlist WHERE state LIKE 'Waiting for table metadata lock%';
+--source include/wait_condition.inc
+
+--echo # Sleep to bump SBM > MASTER_DELAY
+--sleep 1
+
+--echo # Validating SBM increases with MASTER_DELAY
+--let $sbm_trx1_exe= query_get_value(SHOW SLAVE STATUS, Seconds_Behind_Master, 1)
+if (`SELECT $sbm_trx1_exe <= $master_delay`)
+{
+    --echo # SBM: $sbm_trx1_exe
+    --die Seconds_Behind_Master should increase past the MASTER_DELAY while executing
+}
+--echo # ..done
+
+--connection master
+insert into t1 values (2);
+--source include/save_master_gtid.inc
+
+--connection slave
+
+--echo # Waiting for second transaction to delay on slave..
+--let $wait_condition= SELECT count(*) FROM information_schema.processlist WHERE state LIKE 'Waiting until MASTER_DELAY seconds after master executed event';
+--source include/wait_condition.inc
+
+--echo # Ensure SBM is still increasing from first trx (i.e. SBM is not updated by second transaction)
+
+--echo # Validating SBM does not change from second transaction because first is still executing..
+--let $sbm_trx2_arrive= query_get_value(SHOW SLAVE STATUS, Seconds_Behind_Master, 1)
+if (`SELECT $sbm_trx2_arrive <= $master_delay`)
+{
+    --echo # SBM: $sbm_trx2_arrive
+    --die Seconds_Behind_Master should not have updated from second transaction
+}
+--echo # ..done
+
+--connection slave
+--echo # Waiting for second transaction to begin executing..
+--let $wait_condition= SELECT count(*) FROM information_schema.processlist WHERE state LIKE 'Waiting for prior transaction to start commit%';
+--source include/wait_condition.inc
+
+--echo # Validating SBM has grown past 2x MASTER_DELAY..
+--let $sbm_trx2_long_running= query_get_value(SHOW SLAVE STATUS, Seconds_Behind_Master, 1)
+if (`SELECT $sbm_trx2_long_running <= ($master_delay*2)`)
+{
+    --echo # SBM: $sbm_trx2_long_running
+    --die Seconds_Behind_Master should account for over twice master_delay because the second transaction has finished delaying
+}
+--echo # ..done
+
+--echo # Unlock tables to allow both transactions to complete on slave
+UNLOCK TABLES;
+--source include/sync_with_master_gtid.inc
+
+--echo # Validating SBM resets to 0 when idle..
+--let $sbm_idle= query_get_value(SHOW SLAVE STATUS, Seconds_Behind_Master, 1)
+if (`SELECT $sbm_idle > 0`)
+{
+    --echo # SBM: $sbm_idle
+    --die Seconds_Behind_Master should be 0 when idle
+}
+--echo # ..done
+
+--echo # New transactions on idle slave should reset SBM on event arrival
+
+--connection slave
+LOCK TABLE t1 WRITE;
+
+--connection master
+insert into t1 values (3);
+
+--connection slave
+--echo # Waiting for transaction after idling to arrive on slave and start delaying..
+--let $wait_condition= SELECT count(*) FROM information_schema.processlist WHERE state LIKE 'Waiting until MASTER_DELAY seconds after master executed event';
+--source include/wait_condition.inc
+
+--echo # Validating SBM resets when new event arrives after idling..
+--let $sbm_trx3_arrive= query_get_value(SHOW SLAVE STATUS, Seconds_Behind_Master, 1)
+if (`SELECT $sbm_trx3_arrive >= $master_delay`)
+{
+    --echo # SBM: $sbm_trx3_arrive
+    --die Seconds_Behind_Master should reset on an event after idling
+}
+--echo # ..done
+
+--connection slave
+UNLOCK TABLES;
+
+--echo #
+--echo # Cleanup
+
+--connection slave
+--echo # Reset master_delay
+--source include/stop_slave.inc
+--eval CHANGE MASTER TO master_delay=0
+--eval set @@GLOBAL.slave_parallel_threads=$old_slave_threads
+--source include/start_slave.inc
+
+--connection master
+DROP TABLE t1;
+--source include/save_master_gtid.inc
+
+--connection slave
+--source include/sync_with_master_gtid.inc
+
+--source include/rpl_end.inc
+
+--echo # End of rpl_delayed_parallel_slave_sbm.test

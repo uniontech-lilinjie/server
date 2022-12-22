@@ -1,0 +1,65 @@
+include/master-slave.inc
+[connection master]
+connection master;
+create table t1 (a int);
+include/sync_slave_sql_with_master.inc
+connection slave;
+include/stop_slave.inc
+change master to master_delay=3, master_use_gtid=Slave_Pos;
+set @@GLOBAL.slave_parallel_threads=2;
+include/start_slave.inc
+connection slave;
+LOCK TABLE t1 WRITE;
+connection master;
+insert into t1 values (1);
+connection slave;
+# Waiting for first transaction to arrive on slave and start delaying..
+# Validating SBM resets..
+# ..done
+# Waiting for first transaction to start executing on slave..
+# Sleep to bump SBM > MASTER_DELAY
+# Validating SBM increases with MASTER_DELAY
+# ..done
+connection master;
+insert into t1 values (2);
+include/save_master_gtid.inc
+connection slave;
+# Waiting for second transaction to delay on slave..
+# Ensure SBM is still increasing from first trx (i.e. SBM is not updated by second transaction)
+# Validating SBM does not change from second transaction because first is still executing..
+# ..done
+connection slave;
+# Waiting for second transaction to begin executing..
+# Validating SBM has grown past 2x MASTER_DELAY..
+# ..done
+# Unlock tables to allow both transactions to complete on slave
+UNLOCK TABLES;
+include/sync_with_master_gtid.inc
+# Validating SBM resets to 0 when idle..
+# ..done
+# New transactions on idle slave should reset SBM on event arrival
+connection slave;
+LOCK TABLE t1 WRITE;
+connection master;
+insert into t1 values (3);
+connection slave;
+# Waiting for transaction after idling to arrive on slave and start delaying..
+# Validating SBM resets when new event arrives after idling..
+# ..done
+connection slave;
+UNLOCK TABLES;
+#
+# Cleanup
+connection slave;
+# Reset master_delay
+include/stop_slave.inc
+CHANGE MASTER TO master_delay=0;
+set @@GLOBAL.slave_parallel_threads=0;
+include/start_slave.inc
+connection master;
+DROP TABLE t1;
+include/save_master_gtid.inc
+connection slave;
+include/sync_with_master_gtid.inc
+include/rpl_end.inc
+# End of rpl_delayed_parallel_slave_sbm.test
