@@ -1589,7 +1589,7 @@ init_fts_doc_id_for_ref(
 		if (!foreign->modifies_child(is_delete))
 			continue;
 		ut_ad(foreign->foreign_table);
-		ut_ad(foreign->foreign_table->get_ref_count() != 0);
+//		ut_ad(foreign->foreign_table->get_ref_count() != 0);
 
 		if (foreign->foreign_table->fts) {
 			fts_init_doc_id(foreign->foreign_table);
