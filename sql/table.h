@@ -77,6 +77,7 @@ class derived_handler;
 class Pushdown_derived;
 struct Name_resolution_context;
 class Table_function_json_table;
+typedef struct st_copy_info COPY_INFO;
 
 /*
   Used to identify NESTED_JOIN structures within a join (applicable only to
@@ -1796,7 +1797,11 @@ public:
                              ha_rows *rows_inserted);
   bool vers_check_update(List<Item> &items);
   static bool check_period_overlaps(const KEY &key, const uchar *lhs, const uchar *rhs);
+  struct replace_execution_result
+  { int error; bool updated, before_trg_error, after_trg_error; };
   int delete_row();
+  replace_execution_result replace_row(uint key_nr, COPY_INFO *info,
+                                       bool use_triggers, bool versioned);
   /* Used in majority of DML (called from fill_record()) */
   void vers_update_fields();
   /* Used in DELETE, DUP REPLACE and insert history row */

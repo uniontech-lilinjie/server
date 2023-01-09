@@ -40,6 +40,7 @@ int check_that_all_fields_are_given_values(THD *thd, TABLE *entry,
 int vers_insert_history_row(TABLE *table);
 int check_duplic_insert_without_overlaps(THD *thd, TABLE *table,
                                          enum_duplicates duplic);
+int locate_dup_record(THD *thd, TABLE *table, uchar *&key, uint keynum);
 int write_record(THD *thd, TABLE *table, COPY_INFO *info,
                  select_result *returning= NULL);
 void kill_delayed_threads(void);
