@@ -1041,5 +1041,11 @@ where a = 1)));
 select * from t1;
 a
 deallocate prepare stmt;
+#
+# MDEV-30052: SIGSEGV in subquery_types_allow_materialization, AddressSanitizer: 
+# ... use-after-poison in base_list_iterator::next
+#   check this doesn't kill the server
+#
+UPDATE t3 SET c=1 WHERE c=2 ORDER BY (1 IN ((SELECT * FROM (SELECT * FROM t3) AS v1 GROUP BY c WINDOW v2 AS (ORDER BY (SELECT * FROM t3 GROUP BY c WINDOW v3 AS (PARTITION BY c))))));
 drop table t1,t2,t3;
 # End of 10.3 test

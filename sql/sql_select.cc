@@ -614,11 +614,18 @@ void remove_redundant_subquery_clauses(st_select_lex *subq_select_lex)
           when it constructs different structure for execution phase.
 	*/
         List_iterator<Item> li(subq_select_lex->join->all_fields);
-	Item *item;
+        List_iterator<Item> fi(subq_select_lex->join->fields_list);
+	Item *item, *first_item;
+        first_item= fi++;
         while ((item= li++))
 	{
           if (item == *ord->item)
-	    li.remove();
+          {
+            // do not remove this if it is the only real select item left
+            if (!(subq_select_lex->join->fields_list.elements == 1
+                    && first_item == item))
+              li.remove();
+          }
 	}
       }
     }
