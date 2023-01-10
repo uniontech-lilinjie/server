@@ -1048,4 +1048,17 @@ deallocate prepare stmt;
 #
 UPDATE t3 SET c=1 WHERE c=2 ORDER BY (1 IN ((SELECT * FROM (SELECT * FROM t3) AS v1 GROUP BY c WINDOW v2 AS (ORDER BY (SELECT * FROM t3 GROUP BY c WINDOW v3 AS (PARTITION BY c))))));
 drop table t1,t2,t3;
+#
+# MDEV-30342 Wrong "Truncated incorrect DECIMAL value" warning/error
+#
+create table t1(c1 varchar(1));
+create table t2(c1 varchar(1));
+insert into t1(c1) values('#');
+select @@sql_mode like '%strict_all_tables%';
+@@sql_mode like '%strict_all_tables%'
+0
+insert into t2(c1) select if(c1 = '#', c1 = 0, c1) as c1 from t1;
+drop table t1, t2;
+#
 # End of 10.3 test
+#
